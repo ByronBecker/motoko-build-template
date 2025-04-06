@@ -24,7 +24,82 @@ jobs:
         run: |
           docker compose build wasm
 
-      - name: Run build script inside wasm container
+      - name: Run build script inside wasm container and extract hash
+        id: build_wasm
         run: |
-          # This executes the command specified under "command" in docker-compose.yml
-          docker compose run --rm wasm
+          # Run docker compose and store the entire output in a variable
+          OUTPUT=$(docker compose run --rm wasm)
+
+          echo "===== Docker Compose Output ====="
+          echo "$OUTPUT"
+          echo "================================="
+
+          # 2) Look for the line with "out/out_Linux_x86_64.wasm" 
+          #    e.g. "79b15176dc613860f35867828f40e7d6...  out/out_Linux_x86_64.wasm"
+          HASH_LINE=$(echo "$OUTPUT" | grep 'out/out_Linux_x86_64.wasm' || true)
+
+          if [ -z "$HASH_LINE" ]; then
+            echo "No line with out/out_Linux_x86_64.wasm found!"
+            exit 1
+          fi
+
+          # 3) Extract the hash (first space-delimited token)
+          DOCKER_HASH=$(echo "$HASH_LINE" | awk '{print $1}')
+          echo "docker_hash=$DOCKER_HASH" >> $GITHUB_OUTPUT
+      - name: Print build hash
+        run: |
+          echo "Docker hash: ${{ steps.build_wasm.outputs.docker_hash }}"
+  
+      - name: Install dfx
+        uses: dfinity/setup-dfx@main
+        with:
+          dfx-version: 0.26.0-beta.1
+
+      - name: Ensure 0 controller and compare hash with dfx canister info
+        run: |
+          # 1) Run `dfx canister --ic info empty`
+          INFO=$(dfx canister --ic info empty)
+
+          echo "===== dfx canister --ic info empty ====="
+          echo "$INFO"
+          echo "========================================"
+
+          # 2) Extract the Controllers line (if any)
+          CONTROLLERS_LINE=$(echo "$INFO" | grep '^Controllers:' || true)
+          # 3) Extract the Module hash line
+          MODULE_HASH_LINE=$(echo "$INFO" | grep '^Module hash:' || true)
+
+          # 4) Assert no controllers
+          #    By default, if there's a "Controllers:" line, it means there is at least 1 controller
+          if [ -n "$CONTROLLERS_LINE" ]; then
+            # If the line is exactly "Controllers:" with no principal after it, that might be empty.
+            # But typically you get "Controllers: <principal>"
+            # If you want to be certain it's truly empty, you can parse further. For now, let's fail if it appears at all.
+            echo "ERROR: Found controllers, but expected none."
+            echo "$CONTROLLERS_LINE"
+            exit 1
+          fi
+
+          # 5) Extract just the hex digest (minus "0x")
+          #    Example line: "Module hash: 0xd6129209b5..."
+          MODULE_HASH=$(echo "$MODULE_HASH_LINE" | sed -E 's/^Module hash: 0x([A-Za-z0-9]+)/\1/')
+
+          if [ -z "$MODULE_HASH" ]; then
+            echo "ERROR: Could not parse Module hash from: $MODULE_HASH_LINE"
+            exit 1
+          fi
+
+          # 6) Compare with the Docker hash
+          DOCKER_HASH="${{ steps.build_wasm.outputs.docker_hash }}"
+
+          echo "Docker hash: $DOCKER_HASH"
+          echo "Canister hash: $MODULE_HASH"
+
+          # If you want them to be exactly the same string, do this:
+          if [ "$DOCKER_HASH" = "$MODULE_HASH" ]; then
+            echo "SUCCESS: Hashes match"
+          else
+            echo "ERROR: Hash mismatch!"
+            exit 1
+          fi
+      
