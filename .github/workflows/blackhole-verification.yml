@@ -95,6 +95,7 @@ jobs:
             exit 1
           else
             echo "✓ No controllers found for canister ${{ steps.gather_info.outputs.canister_id }}."
+            echo "View this at https://dashboard.internetcomputer.org/canister/${{ steps.gather_info.outputs.canister_id }}"
           fi
 
       - name: Compare hashes
@@ -106,7 +107,8 @@ jobs:
           echo "Canister hash: $MODULE_HASH"
 
           if [ "$DOCKER_HASH" = "$MODULE_HASH" ]; then
-            echo "✓ SUCCESS: Hashes match."
+            echo "✓ SUCCESS: Hashes match for canister ${{ steps.gather_info.outputs.canister_id }}."
+            echo "View this at https://dashboard.internetcomputer.org/canister/${{ steps.gather_info.outputs.canister_id }}"
           else
             echo "✘ ERROR: Hash mismatch!"
             exit 1
