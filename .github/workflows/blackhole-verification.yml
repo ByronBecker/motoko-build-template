@@ -54,6 +54,10 @@ jobs:
         uses: dfinity/setup-dfx@main
         with:
           dfx-version: 0.26.0-beta.1
+      
+      - name: Import the buildtest identity
+        run: |
+          dfx identity import buildtest ./build-test.pem --disable-encryption --quiet
 
       - name: Ensure 0 controller and compare hash with dfx canister info
         run: |
