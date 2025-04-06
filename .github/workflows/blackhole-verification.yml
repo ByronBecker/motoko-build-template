@@ -59,61 +59,56 @@ jobs:
         run: |
           dfx identity import buildtest ./build-test.pem --disable-encryption --quiet
 
-      - name: Ensure 0 controller and compare hash with dfx canister info
+      - name: Gather canister info
+        id: gather_info
         run: |
-          # 1) Set the environment variable to disable the warning
+          # 1) Set the environment variable to disable the plaintext warning
           export DFX_WARNING=-mainnet_plaintext_identity
 
-          # 2) Run `dfx canister --ic info empty`
+          # 2) Query dfx for info
+          CANISTER_ID=$(dfx canister --ic id empty)
           INFO=$(dfx canister --ic info empty)
 
           echo "===== dfx canister --ic info empty ====="
           echo "$INFO"
           echo "========================================"
 
-          # 3) Extract the Controllers line and assert that there are no controllers 
+          # 3) Extract the "Controllers:" line (may be empty if 0 controllers)
           CONTROLLERS_LINE=$(echo "$INFO" | grep '^Controllers:' || true)
-
-          # In dfx output, if there are zero controllers,
-          # the line exists but is empty: "Controllers:"
-          # If there is at least one controller, it would look like:
-          # "Controllers: r7inp-6aaaa-aaaaa-aaabq-cai"
-
-          # Remove the prefix "Controllers:" plus any leading whitespace after it.
-          # That leaves either an empty string (for 0 controllers) or some principal IDs.
+          # Remove "Controllers:" prefix + any trailing spaces to get the controller principals
           controllers_str=$(echo "$CONTROLLERS_LINE" | sed -E 's/^Controllers:\s*//')
 
-          if [ -n "$controllers_str" ]; then
-            echo "ERROR: Found controllers, but expected none."
-            echo "Controllers line: $CONTROLLERS_LINE"
+          # 4) Extract the "Module hash:" line, then parse out just the hex string
+          MODULE_HASH_LINE=$(echo "$INFO" | grep '^Module hash:' || true)
+          MODULE_HASH=$(echo "$MODULE_HASH_LINE" | sed -E 's/^Module hash:\s*0x([A-Za-z0-9]+)/\1/')
+
+          # 5) Expose these values as step outputs
+          echo "controllers_str=$controllers_str" >> $GITHUB_OUTPUT
+          echo "module_hash=$MODULE_HASH" >> $GITHUB_OUTPUT
+          echo "canister_id=$CANISTER_ID" >> $GITHUB_OUTPUT
+
+      - name: Ensure zero controllers
+        run: |
+          if [ -n "${{ steps.gather_info.outputs.controllers_str }}" ]; then
+            echo "✘ ERROR: Found controllers, but expected none."
+            echo "✘ Controllers: ${{ steps.gather_info.outputs.controllers_str }}"
             exit 1
           else
-            echo "No controllers found. ✓"
+            echo "✓ No controllers found for canister ${{ steps.gather_info.outputs.canister_id }}."
           fi
 
-          # 4) Extract the Module hash line
-          MODULE_HASH_LINE=$(echo "$INFO" | grep '^Module hash:' || true)
-
-          # 5) Extract just the hex digest (minus "0x")
-          #    Example line: "Module hash: 0xd6129209b5..."
-          MODULE_HASH=$(echo "$MODULE_HASH_LINE" | sed -E 's/^Module hash: 0x([A-Za-z0-9]+)/\1/')
-
-          if [ -z "$MODULE_HASH" ]; then
-            echo "ERROR: Could not parse Module hash from: $MODULE_HASH_LINE"
-            exit 1
-          fi
-
-          # 6) Compare with the Docker hash
+      - name: Compare hashes
+        run: |
           DOCKER_HASH="${{ steps.build_wasm.outputs.docker_hash }}"
+          MODULE_HASH="${{ steps.gather_info.outputs.module_hash }}"
 
-          echo "Docker hash: $DOCKER_HASH"
+          echo "Docker hash:   $DOCKER_HASH"
           echo "Canister hash: $MODULE_HASH"
 
-          # If you want them to be exactly the same string, do this:
           if [ "$DOCKER_HASH" = "$MODULE_HASH" ]; then
-            echo "SUCCESS: Hashes match"
+            echo "✓ SUCCESS: Hashes match."
           else
-            echo "ERROR: Hash mismatch!"
+            echo "✘ ERROR: Hash mismatch!"
             exit 1
-          fi
+          fi 
       
