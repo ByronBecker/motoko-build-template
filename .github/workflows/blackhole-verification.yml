@@ -71,21 +71,28 @@ jobs:
           echo "$INFO"
           echo "========================================"
 
-          # 3) Extract the Controllers line (if any)
+          # 3) Extract the Controllers line and assert that there are no controllers 
           CONTROLLERS_LINE=$(echo "$INFO" | grep '^Controllers:' || true)
+
+          # In dfx output, if there are zero controllers,
+          # the line exists but is empty: "Controllers:"
+          # If there is at least one controller, it would look like:
+          # "Controllers: r7inp-6aaaa-aaaaa-aaabq-cai"
+
+          # Remove the prefix "Controllers:" plus any leading whitespace after it.
+          # That leaves either an empty string (for 0 controllers) or some principal IDs.
+          controllers_str=$(echo "$CONTROLLERS_LINE" | sed -E 's/^Controllers:\s*//')
+
+          if [ -n "$controllers_str" ]; then
+            echo "ERROR: Found controllers, but expected none."
+            echo "Controllers line: $CONTROLLERS_LINE"
+            exit 1
+          else
+            echo "No controllers found. ✓"
+          fi
+
           # 4) Extract the Module hash line
           MODULE_HASH_LINE=$(echo "$INFO" | grep '^Module hash:' || true)
-
-          # 5) Assert no controllers
-          #    By default, if there's a "Controllers:" line, it means there is at least 1 controller
-          if [ -n "$CONTROLLERS_LINE" ]; then
-            # If the line is exactly "Controllers:" with no principal after it, that might be empty.
-            # But typically you get "Controllers: <principal>"
-            # If you want to be certain it's truly empty, you can parse further. For now, let's fail if it appears at all.
-            echo "ERROR: Found controllers, but expected none."
-            echo "$CONTROLLERS_LINE"
-            exit 1
-          fi
 
           # 5) Extract just the hex digest (minus "0x")
           #    Example line: "Module hash: 0xd6129209b5..."
@@ -96,7 +103,7 @@ jobs:
             exit 1
           fi
 
-          # 7) Compare with the Docker hash
+          # 6) Compare with the Docker hash
           DOCKER_HASH="${{ steps.build_wasm.outputs.docker_hash }}"
 
           echo "Docker hash: $DOCKER_HASH"
