@@ -61,19 +61,22 @@ jobs:
 
       - name: Ensure 0 controller and compare hash with dfx canister info
         run: |
-          # 1) Run `dfx canister --ic info empty`
+          # 1) Set the environment variable to disable the warning
+          export DFX_WARNING=-mainnet_plaintext_identity
+
+          # 2) Run `dfx canister --ic info empty`
           INFO=$(dfx canister --ic info empty)
 
           echo "===== dfx canister --ic info empty ====="
           echo "$INFO"
           echo "========================================"
 
-          # 2) Extract the Controllers line (if any)
+          # 3) Extract the Controllers line (if any)
           CONTROLLERS_LINE=$(echo "$INFO" | grep '^Controllers:' || true)
-          # 3) Extract the Module hash line
+          # 4) Extract the Module hash line
           MODULE_HASH_LINE=$(echo "$INFO" | grep '^Module hash:' || true)
 
-          # 4) Assert no controllers
+          # 5) Assert no controllers
           #    By default, if there's a "Controllers:" line, it means there is at least 1 controller
           if [ -n "$CONTROLLERS_LINE" ]; then
             # If the line is exactly "Controllers:" with no principal after it, that might be empty.
@@ -93,7 +96,7 @@ jobs:
             exit 1
           fi
 
-          # 6) Compare with the Docker hash
+          # 7) Compare with the Docker hash
           DOCKER_HASH="${{ steps.build_wasm.outputs.docker_hash }}"
 
           echo "Docker hash: $DOCKER_HASH"
