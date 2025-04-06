@@ -18,13 +18,13 @@ jobs:
 
       - name: Build base image
         run: |
-          docker-compose build base
+          docker compose build base
 
       - name: Build wasm image
         run: |
-          docker-compose build wasm
+          docker compose build wasm
 
       - name: Run build script inside wasm container
         run: |
           # This executes the command specified under "command" in docker-compose.yml
-          docker-compose run --rm wasm
+          docker compose run --rm wasm
